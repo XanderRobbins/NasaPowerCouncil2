@@ -17,6 +17,7 @@ class PricesParams(BaseModel):
     end: date | None = None
     period: str | None = None
     interval: str = "1d"
+    prepost: bool = False
 
 
 @runtime_checkable

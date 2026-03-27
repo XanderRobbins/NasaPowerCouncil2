@@ -78,6 +78,7 @@ _EVENTS_MODULES = (
     "calendarEvents,earnings,earningsHistory,earningsTrend,upgradeDowngradeHistory"
 )
 _ESG_MODULES = "esgScores"
+_FUNDS_MODULES = "topHoldings,fundProfile,fundPerformance"
 
 # Human-readable names for financial statement line items
 _METRIC_LABELS: dict[str, str] = {
@@ -230,7 +231,12 @@ class YahooSource:
 
     # ── Price history ─────────────────────────────────────────────────────────
 
-    async def fetch_prices(self, params: PricesParams, *, client: httpx.AsyncClient) -> pd.DataFrame:
+    async def fetch_prices(
+        self,
+        params: PricesParams,
+        *,
+        client: httpx.AsyncClient,
+    ) -> pd.DataFrame:
         if params.period:
             start, end = period_to_dates(params.period)
         else:
@@ -245,11 +251,37 @@ class YahooSource:
             "includeAdjustedClose": "true",
             "events": "div,splits,capitalGains",
         }
+        if params.prepost:
+            query["includePrePost"] = "true"
         if crumb:
             query["crumb"] = crumb
 
         data = await self._get(client, f"{_BASE}/v8/finance/chart/{params.symbol}", params=query)
-        return self._parse_chart(data, params.symbol)
+        df, meta = self._parse_chart(data, params.symbol)
+        # Attach metadata as a non-index attribute so callers can retrieve it
+        df.attrs["_meta"] = meta
+        return df
+
+    async def fetch_price_metadata(
+        self,
+        symbol: str,
+        *,
+        client: httpx.AsyncClient,
+    ) -> dict[str, Any]:
+        """Return chart metadata for *symbol* without building a full price DataFrame."""
+        crumb = await self._crumb.get(client)
+        query: dict[str, Any] = {
+            "period1": date_to_timestamp(date(2020, 1, 1)),
+            "period2": date_to_timestamp(date(2020, 1, 5)),
+            "interval": "1d",
+            "includeAdjustedClose": "false",
+            "events": "",
+        }
+        if crumb:
+            query["crumb"] = crumb
+        data = await self._get(client, f"{_BASE}/v8/finance/chart/{symbol}", params=query)
+        result = (data.get("chart") or {}).get("result") or [{}]
+        return dict(result[0].get("meta", {}))
 
     # ── quoteSummary (info / fundamentals) ────────────────────────────────────
 
@@ -282,6 +314,9 @@ class YahooSource:
 
     async def fetch_esg(self, symbol: str, *, client: httpx.AsyncClient) -> dict[str, Any]:
         return await self.fetch_quote_summary(symbol, _ESG_MODULES, client=client)
+
+    async def fetch_funds_data(self, symbol: str, *, client: httpx.AsyncClient) -> dict[str, Any]:
+        return await self.fetch_quote_summary(symbol, _FUNDS_MODULES, client=client)
 
     # ── Options ───────────────────────────────────────────────────────────────
 
@@ -385,12 +420,15 @@ class YahooSource:
 
     # ── Parsers ───────────────────────────────────────────────────────────────
 
-    def _parse_chart(self, data: dict[str, Any], symbol: str) -> pd.DataFrame:
+    def _parse_chart(
+        self, data: dict[str, Any], symbol: str
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         result = (data.get("chart") or {}).get("result")
         if not result:
             raise SymbolNotFoundError("yahoo", symbol)
 
         r = result[0]
+        meta: dict[str, Any] = dict(r.get("meta", {}))
         timestamps: list[int] = r.get("timestamp", [])
         if not timestamps:
             raise SymbolNotFoundError("yahoo", symbol)
@@ -442,7 +480,7 @@ class YahooSource:
             raise SymbolNotFoundError("yahoo", symbol)
 
         df = pd.DataFrame(rows).set_index("Date").sort_index()
-        return df
+        return df, meta
 
     @staticmethod
     def _parse_options_contracts(contracts: list[dict[str, Any]]) -> pd.DataFrame:
@@ -781,3 +819,109 @@ class YahooSource:
         df = pd.DataFrame(rows).set_index("Date")
         df.index.name = "Date"
         return df
+
+    @staticmethod
+    def parse_funds_data(raw: dict[str, Any]) -> dict[str, Any]:
+        """Parse ETF/mutual fund data from topHoldings, fundProfile, fundPerformance modules.
+
+        Returns a dict with keys:
+        - ``top_holdings``: DataFrame of top holdings (name, symbol, holdingPercent)
+        - ``sector_weightings``: DataFrame of sector allocations
+        - ``asset_classes``: dict of bond/stock/cash/other % weights
+        - ``profile``: dict with fund name, family, description, category
+        - ``annual_returns``: DataFrame of yearly returns
+        - ``monthly_returns``: DataFrame of monthly trailing returns
+        - ``risk_stats``: dict with alpha, beta, mean_annual_return, sharpe_ratio, etc.
+        """
+        # ── Top holdings ──────────────────────────────────────────────────────
+        holdings_raw = raw.get("topHoldings", {})
+        holding_list = holdings_raw.get("holdings", [])
+        top_holdings = pd.DataFrame([
+            {
+                "Symbol": h.get("symbol", ""),
+                "Name": h.get("holdingName", ""),
+                "% of Assets": safe_float(extract_raw(h.get("holdingPercent"))),
+            }
+            for h in holding_list
+        ])
+
+        # ── Sector weightings ─────────────────────────────────────────────────
+        sector_list = holdings_raw.get("sectorWeightings", [])
+        sector_rows = []
+        for s in sector_list:
+            for sector_name, val in s.items():
+                pct = safe_float(extract_raw(val)) if isinstance(val, dict) else safe_float(val)
+                if pct is not None:
+                    sector_rows.append({"Sector": sector_name, "Weight": pct})
+        sector_df = pd.DataFrame(sector_rows)
+
+        # ── Asset class weights ───────────────────────────────────────────────
+        bond_ratings = holdings_raw.get("bondRatings", [])
+        asset_classes = {
+            "stockPosition": safe_float(extract_raw(holdings_raw.get("stockPosition"))),
+            "bondPosition": safe_float(extract_raw(holdings_raw.get("bondPosition"))),
+            "cashPosition": safe_float(extract_raw(holdings_raw.get("cashPosition"))),
+            "otherPosition": safe_float(extract_raw(holdings_raw.get("otherPosition"))),
+            "preferredPosition": safe_float(extract_raw(holdings_raw.get("preferredPosition"))),
+            "convertiblePosition": safe_float(extract_raw(holdings_raw.get("convertiblePosition"))),
+        }
+
+        # ── Fund profile ──────────────────────────────────────────────────────
+        fp = raw.get("fundProfile", {})
+        profile = {
+            "Fund Family": fp.get("family", ""),
+            "Fund Name": fp.get("legalType", ""),
+            "Category Name": fp.get("categoryName", ""),
+            "Description": (fp.get("feesExpensesInvestment") or {}).get("annualReportExpenseRatio"),
+            "Manager Name": fp.get("managementInfo", {}).get("managerName", "") if isinstance(fp.get("managementInfo"), dict) else "",
+            "Inception Date": fp.get("managementInfo", {}).get("managerTenure", "") if isinstance(fp.get("managementInfo"), dict) else "",
+        }
+
+        # ── Performance ───────────────────────────────────────────────────────
+        perf = raw.get("fundPerformance", {})
+        annual_list = perf.get("annualTotalReturns", {}).get("returns", [])
+        annual_returns = pd.DataFrame([
+            {"Year": r.get("year", ""), "Annual Return": safe_float(extract_raw(r.get("annualValue")))}
+            for r in annual_list
+        ])
+
+        trailing = perf.get("trailingReturns", {})
+        _TRAILING_KEYS = {
+            "ytd": "YTD",
+            "oneMonth": "1 Month",
+            "threeMonth": "3 Months",
+            "oneYear": "1 Year",
+            "threeYear": "3 Years",
+            "fiveYear": "5 Years",
+            "tenYear": "10 Years",
+        }
+        monthly_rows = [
+            {"Period": label, "Return": safe_float(extract_raw(trailing.get(key)))}
+            for key, label in _TRAILING_KEYS.items()
+            if trailing.get(key) is not None
+        ]
+        monthly_returns = pd.DataFrame(monthly_rows)
+
+        risk = perf.get("riskOverviewStatistics", {}).get("riskStatistics", [{}])
+        risk_stats = {}
+        for r in risk:
+            period = r.get("year", "3y")
+            risk_stats[period] = {
+                "alpha": safe_float(r.get("alpha")),
+                "beta": safe_float(r.get("beta")),
+                "meanAnnualReturn": safe_float(r.get("meanAnnualReturn")),
+                "rSquared": safe_float(r.get("rSquared")),
+                "stdDev": safe_float(r.get("stdDev")),
+                "sharpeRatio": safe_float(r.get("sharpeRatio")),
+                "treynorRatio": safe_float(r.get("treynorRatio")),
+            }
+
+        return {
+            "top_holdings": top_holdings,
+            "sector_weightings": sector_df,
+            "asset_classes": asset_classes,
+            "profile": profile,
+            "annual_returns": annual_returns,
+            "monthly_returns": monthly_returns,
+            "risk_stats": risk_stats,
+        }

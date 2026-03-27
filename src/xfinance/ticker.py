@@ -173,10 +173,13 @@ class Ticker:
                 start=start_date,
                 end=end_date,
                 interval=interval,
+                prepost=prepost,
             )
             return await self._yahoo.fetch_prices(params, client=client)
 
         raw = _run(_fetch())
+        # Capture chart metadata emitted by fetch_prices
+        self._last_history_meta: dict[str, Any] = raw.attrs.get("_meta", {})
         return cleaner.clean_prices(
             raw,
             auto_adjust=auto_adjust,
@@ -603,11 +606,148 @@ class Ticker:
 
         return _run(_fetch())
 
+    # ── Funds data (ETF / mutual fund) ────────────────────────────────────────
+
+    @property
+    def funds_data(self) -> dict[str, Any]:
+        """Rich ETF / mutual fund data object.
+
+        Keys
+        ----
+        ``top_holdings``     DataFrame — symbol, name, % of assets
+        ``sector_weightings`` DataFrame — sector, weight
+        ``asset_classes``    dict — stock/bond/cash/other position %
+        ``profile``          dict — fund family, category, manager
+        ``annual_returns``   DataFrame — year, annual return
+        ``monthly_returns``  DataFrame — trailing period returns
+        ``risk_stats``       dict keyed by period (``'3y'``, ``'5y'``, ``'10y'``)
+                             with alpha, beta, sharpe, std dev
+
+        Returns an empty dict for non-fund assets.
+        """
+        async def _fetch() -> dict[str, Any]:
+            client = await self._get_client()
+            return await self._yahoo.fetch_funds_data(self._symbol, client=client)
+        raw = self._cached("funds_raw", _fetch)
+        return YahooSource.parse_funds_data(raw)
+
+    # ── History metadata ──────────────────────────────────────────────────────
+
+    @property
+    def history_metadata(self) -> dict[str, Any]:
+        """Metadata from the last ``history()`` call (or a lightweight probe).
+
+        Includes: ``currency``, ``symbol``, ``exchangeName``,
+        ``instrumentType``, ``timezone``, ``exchangeTimezoneName``,
+        ``regularMarketPrice``, ``dataGranularity``, ``range``,
+        ``validRanges``, ``firstTradeDate``.
+
+        Populated automatically by ``history()``.  A lightweight API call
+        is made if ``history()`` has not yet been called.
+        """
+        if hasattr(self, "_last_history_meta") and self._last_history_meta:
+            return self._last_history_meta
+
+        async def _probe() -> dict[str, Any]:
+            client = await self._get_client()
+            return await self._yahoo.fetch_price_metadata(self._symbol, client=client)
+
+        return self._cached("history_meta", _probe)  # type: ignore[return-value]
+
+    # ── Financial statement method variants ────────────────────────────────────
+
+    def get_income_stmt(self, pretty: bool = False, freq: str = "yearly") -> pd.DataFrame:
+        """Return the income statement as a DataFrame.
+
+        Parameters
+        ----------
+        pretty:
+            If True, format column headers as plain strings (no Timestamp objects).
+        freq:
+            ``'yearly'`` (default) or ``'quarterly'``.
+        """
+        df = self.quarterly_income_stmt if freq in ("quarterly", "q") else self.income_stmt
+        if pretty:
+            df = df.copy()
+            df.columns = [str(c) for c in df.columns]
+        return df
+
+    def get_balance_sheet(self, pretty: bool = False, freq: str = "yearly") -> pd.DataFrame:
+        """Return the balance sheet as a DataFrame.
+
+        Parameters
+        ----------
+        pretty:
+            If True, format column headers as plain strings.
+        freq:
+            ``'yearly'`` (default) or ``'quarterly'``.
+        """
+        df = self.quarterly_balance_sheet if freq in ("quarterly", "q") else self.balance_sheet
+        if pretty:
+            df = df.copy()
+            df.columns = [str(c) for c in df.columns]
+        return df
+
+    def get_cashflow(self, pretty: bool = False, freq: str = "yearly") -> pd.DataFrame:
+        """Return the cash flow statement as a DataFrame.
+
+        Parameters
+        ----------
+        pretty:
+            If True, format column headers as plain strings.
+        freq:
+            ``'yearly'`` (default) or ``'quarterly'``.
+        """
+        df = self.quarterly_cashflow if freq in ("quarterly", "q") else self.cashflow
+        if pretty:
+            df = df.copy()
+            df.columns = [str(c) for c in df.columns]
+        return df
+
+    # ── TTM data ──────────────────────────────────────────────────────────────
+
+    @property
+    def ttm_data(self) -> pd.DataFrame:
+        """Trailing-twelve-months income statement and cash flow.
+
+        Computed by summing the four most recent quarterly income statement
+        and cash flow columns.  Returns a single-column DataFrame with index
+        = line-item name and column = ``'TTM'``.
+
+        For items where summing is not meaningful (percentages, per-share
+        figures, already-cumulative totals from balance sheet), use the
+        annual statements or ``quarterly_income_stmt`` directly.
+        """
+        inc_q = self.quarterly_income_stmt
+        cf_q = self.quarterly_cashflow
+
+        parts: list[pd.Series] = []
+        for df in (inc_q, cf_q):
+            if df.empty:
+                continue
+            # Take up to 4 most recent columns (already sorted newest-first)
+            cols = df.columns[:4]
+            ttm = df[cols].sum(axis=1)
+            parts.append(ttm)
+
+        if not parts:
+            return pd.DataFrame(columns=["TTM"])
+
+        combined = pd.concat(parts)
+        # De-duplicate (some line items appear in both statements)
+        combined = combined[~combined.index.duplicated(keep="first")]
+        return combined.rename("TTM").to_frame().sort_index()
+
     # ── Utility ───────────────────────────────────────────────────────────────
+
+    @property
+    def isin(self) -> str | None:
+        """ISIN identifier for the security (if available)."""
+        return self.info.get("isin")
 
     def get_isin(self) -> str | None:
         """Return ISIN if available in info, else None."""
-        return self.info.get("isin")
+        return self.isin
 
     def get_shares_full(self, start: str | None = None, end: str | None = None) -> pd.Series | None:
         """Return shares outstanding history (when available via SEC or Yahoo)."""

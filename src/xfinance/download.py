@@ -38,8 +38,7 @@ async def _fetch_one(
 ) -> tuple[str, pd.DataFrame | Exception]:
     try:
         raw = await yahoo.fetch_prices(params, client=client)
-        df = cleaner.clean_prices(raw, auto_adjust=True, actions=True)
-        return symbol, df
+        return symbol, raw
     except Exception as exc:
         logger.warning("download: failed to fetch %s: %s", symbol, exc)
         return symbol, exc
@@ -54,9 +53,14 @@ async def _download_async(
     interval: str,
     group_by: str,
     auto_adjust: bool,
+    back_adjust: bool,
     actions: bool,
     threads: bool,
     multi_level_index: bool,
+    repair: bool,
+    keepna: bool,
+    rounding: bool,
+    prepost: bool,
 ) -> pd.DataFrame:
     yahoo = YahooSource()
 
@@ -69,6 +73,7 @@ async def _download_async(
                 start=start,
                 end=end,
                 interval=interval,
+                prepost=prepost,
             )
             tasks.append(_fetch_one(sym, params, yahoo, client))
 
@@ -81,7 +86,15 @@ async def _download_async(
         if isinstance(result, Exception):
             failed.append(sym)
         else:
-            df = cleaner.clean_prices(result, auto_adjust=auto_adjust, actions=actions)
+            effective_auto_adjust = auto_adjust or back_adjust
+            df = cleaner.clean_prices(
+                result,
+                auto_adjust=effective_auto_adjust,
+                actions=actions,
+                repair=repair,
+                keepna=keepna,
+                rounding=rounding,
+            )
             frames[sym] = df
 
     if failed:
@@ -127,10 +140,16 @@ def download(
     *,
     group_by: str = "column",
     auto_adjust: bool = True,
+    back_adjust: bool = False,
     actions: bool = False,
     threads: bool = True,
     ignore_tz: bool = True,
     multi_level_index: bool = True,
+    repair: bool = False,
+    keepna: bool = False,
+    rounding: bool = False,
+    prepost: bool = False,
+    progress: bool = True,
 ) -> pd.DataFrame:
     """Download OHLCV data for one or multiple symbols concurrently.
 
@@ -158,10 +177,25 @@ def download(
     ignore_tz:
         Strip timezone info from the DatetimeIndex (default True, matching
         yfinance behaviour for consistency with downstream tools).
+    back_adjust:
+        Use back-adjusted prices (scales prices backward to align with the
+        oldest historical level).  Mutually exclusive with *auto_adjust*;
+        when both are True, *back_adjust* takes precedence.
     multi_level_index:
         When True (default), always return a MultiIndex DataFrame for multiple
         tickers. When False, return a plain DataFrame for single-ticker downloads.
         Mirrors yfinance's ``multi_level_index`` parameter.
+    repair:
+        Detect and fix 100× unit errors and split-unadjusted history.
+    keepna:
+        Preserve rows where all OHLCV values are NaN.
+    rounding:
+        Round OHLC and Adj Close to 2 decimal places.
+    prepost:
+        Include pre- and post-market bars (only available for intraday intervals).
+    progress:
+        Print a progress indicator to stderr (default True; no-op when only
+        one symbol is requested).
 
     Returns
     -------
@@ -177,10 +211,16 @@ def download(
     >>> df["Close"]["AAPL"]   # close prices for AAPL
     >>> df["AAPL"]["Close"]   # same thing with group_by="ticker"
     """
+    import sys
+    import concurrent.futures
+
     if isinstance(tickers, str):
         syms = [tickers.upper()]
     else:
         syms = [t.upper() for t in tickers]
+
+    if progress and len(syms) > 1:
+        print(f"[xfinance] Downloading {len(syms)} tickers: {', '.join(syms)}", file=sys.stderr)
 
     start_date = _parse_date(start) if start else None
     end_date = _parse_date(end) if end else None
@@ -189,8 +229,6 @@ def download(
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
-
-    import concurrent.futures
 
     if loop is not None and loop.is_running():
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -204,9 +242,14 @@ def download(
                     interval=interval,
                     group_by=group_by,
                     auto_adjust=auto_adjust,
+                    back_adjust=back_adjust,
                     actions=actions,
                     threads=threads,
                     multi_level_index=multi_level_index,
+                    repair=repair,
+                    keepna=keepna,
+                    rounding=rounding,
+                    prepost=prepost,
                 ),
             ).result()
     else:

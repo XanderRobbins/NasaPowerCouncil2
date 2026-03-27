@@ -58,19 +58,27 @@ from xfinance.exceptions import (
     SymbolNotFoundError,
     XFinanceError,
 )
+from xfinance.market import Market
+from xfinance.screener import EquityQuery, FundQuery, Screener
 from xfinance.search import Search
 from xfinance.sector import Industry, Sector
 from xfinance.stream import stream, stream_sync
 from xfinance.ticker import Ticker
+from xfinance.tickers import Tickers
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "Ticker",
+    "Tickers",
     "download",
     "configure_logging",
     "Search",
     "Sector",
     "Industry",
+    "Market",
+    "Screener",
+    "EquityQuery",
+    "FundQuery",
     "stream",
     "stream_sync",
     # Exceptions

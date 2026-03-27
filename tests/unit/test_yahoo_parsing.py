@@ -11,20 +11,25 @@ from xfinance.sources.yahoo import YahooSource
 class TestYahooChartParsing:
     def test_happy_path(self, yahoo_chart_response):
         src = YahooSource()
-        df = src._parse_chart(yahoo_chart_response, "AAPL")
+        df, meta = src._parse_chart(yahoo_chart_response, "AAPL")
         assert len(df) == 3
         assert df.index.name == "Date"
         assert df["Close"].iloc[0] == pytest.approx(185.0)
 
+    def test_meta_returned(self, yahoo_chart_response):
+        src = YahooSource()
+        df, meta = src._parse_chart(yahoo_chart_response, "AAPL")
+        assert isinstance(meta, dict)
+
     def test_dividends_extracted_from_events(self, yahoo_chart_response):
         src = YahooSource()
-        df = src._parse_chart(yahoo_chart_response, "AAPL")
+        df, _ = src._parse_chart(yahoo_chart_response, "AAPL")
         # 2nd bar has a dividend at ts=1704153600
         assert df["Dividends"].iloc[1] == pytest.approx(0.24)
 
     def test_no_events_field_defaults_to_zero(self, yahoo_chart_no_events):
         src = YahooSource()
-        df = src._parse_chart(yahoo_chart_no_events, "AAPL")
+        df, _ = src._parse_chart(yahoo_chart_no_events, "AAPL")
         assert (df["Dividends"] == 0.0).all()
         assert (df["Stock Splits"] == 0.0).all()
 
@@ -49,12 +54,12 @@ class TestYahooChartParsing:
                 "error": None,
             }
         }
-        df = src._parse_chart(data, "AAPL")
+        df, _ = src._parse_chart(data, "AAPL")
         assert len(df) == 1
 
     def test_sorted_ascending(self, yahoo_chart_response):
         src = YahooSource()
-        df = src._parse_chart(yahoo_chart_response, "AAPL")
+        df, _ = src._parse_chart(yahoo_chart_response, "AAPL")
         assert df.index.is_monotonic_increasing
 
 
