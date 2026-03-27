@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "findata"
+version = "0.1.0"
+description = "Multi-source, failover-capable Python financial data library"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+keywords = ["finance", "stocks", "market-data", "yfinance", "financial-data"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+dependencies = [
+    "httpx>=0.27.0",
+    "pandas>=2.0.0",
+    "pydantic>=2.0.0",
+    "tenacity>=8.2.0",
+    "pybreaker>=1.2.0",
+]
+
+[project.optional-dependencies]
+cache = ["diskcache>=5.6.0"]
+duckdb = ["duckdb>=0.10.0", "pyarrow>=14.0.0"]
+websocket = ["websockets>=12.0"]
+polars = ["polars>=0.20.0"]
+all = [
+    "diskcache>=5.6.0",
+    "duckdb>=0.10.0",
+    "pyarrow>=14.0.0",
+    "websockets>=12.0",
+    "polars>=0.20.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-recording>=0.13.0",
+    "vcrpy>=6.0.0",
+    "hypothesis>=6.100.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.4.0",
+    "mypy>=1.9.0",
+]
+
+[project.entry-points."findata.sources"]
+yahoo = "findata.sources.yahoo:YahooSource"
+sec = "findata.sources.sec:SECSource"
+ecb = "findata.sources.ecb:ECBSource"
+binance = "findata.sources.binance:BinanceSource"
+coingecko = "findata.sources.coingecko:CoinGeckoSource"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/findata"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--tb=short"
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
