@@ -77,6 +77,7 @@ _HOLDERS_MODULES = (
 _EVENTS_MODULES = (
     "calendarEvents,earnings,earningsHistory,earningsTrend,upgradeDowngradeHistory"
 )
+_ESG_MODULES = "esgScores"
 
 # Human-readable names for financial statement line items
 _METRIC_LABELS: dict[str, str] = {
@@ -278,6 +279,9 @@ class YahooSource:
 
     async def fetch_events(self, symbol: str, *, client: httpx.AsyncClient) -> dict[str, Any]:
         return await self.fetch_quote_summary(symbol, _EVENTS_MODULES, client=client)
+
+    async def fetch_esg(self, symbol: str, *, client: httpx.AsyncClient) -> dict[str, Any]:
+        return await self.fetch_quote_summary(symbol, _ESG_MODULES, client=client)
 
     # ── Options ───────────────────────────────────────────────────────────────
 
@@ -695,3 +699,85 @@ class YahooSource:
             "Recommendation Key": fd.get("recommendationKey", ""),
             "Number Of Analyst Opinions": safe_int(extract_raw(fd.get("numberOfAnalystOpinions"))),
         }
+
+    @staticmethod
+    def parse_sustainability(raw: dict[str, Any]) -> pd.DataFrame:
+        """Parse ESG / sustainability scores from the esgScores module.
+
+        Returns a two-column DataFrame with rows:
+        esgScores, environmentScore, socialScore, governanceScore, … and metadata.
+        Index = metric name, columns = ['Value', 'Description'].
+        """
+        esg = raw.get("esgScores", {})
+        if not esg:
+            return pd.DataFrame()
+
+        _SCALAR_KEYS: dict[str, str] = {
+            "totalEsg": "Total ESG Score",
+            "environmentScore": "Environment Score",
+            "socialScore": "Social Score",
+            "governanceScore": "Governance Score",
+            "esgPerformance": "ESG Performance",
+            "peerGroup": "Peer Group",
+            "peerCount": "Peer Count",
+            "percentile": "Percentile",
+            "ratingYear": "Rating Year",
+            "ratingMonth": "Rating Month",
+            "highestControversy": "Highest Controversy",
+        }
+
+        rows = []
+        for key, label in _SCALAR_KEYS.items():
+            val = esg.get(key)
+            if val is None:
+                continue
+            raw_val = extract_raw(val) if isinstance(val, dict) else val
+            rows.append({"Value": raw_val, "Description": label})
+
+        # Controversies as a joined string
+        controversies = esg.get("relatedControversy", [])
+        if controversies:
+            rows.append({
+                "Value": "; ".join(controversies),
+                "Description": "Related Controversies",
+            })
+
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+        df.index = [r["Description"] for r in rows]
+        df.index.name = "Metric"
+        return df[["Value"]]
+
+    @staticmethod
+    def parse_earnings_summary(raw: dict[str, Any], *, quarterly: bool = False) -> pd.DataFrame:
+        """Parse EPS + Revenue earnings summary from the earnings module.
+
+        Parameters
+        ----------
+        quarterly:  If True return quarterly data; otherwise yearly.
+
+        Returns
+        -------
+        DataFrame with columns ['Earnings', 'Revenue'] indexed by period label
+        (e.g. '2023', '1Q2024').
+        """
+        earnings = raw.get("earnings", {})
+        financials = earnings.get("financialsChart", {})
+        key = "quarterly" if quarterly else "yearly"
+        periods = financials.get(key, [])
+
+        rows = []
+        for p in periods:
+            label = str(p.get("date", ""))
+            eps = safe_float(extract_raw(p.get("earnings")))
+            rev = safe_float(extract_raw(p.get("revenue")))
+            rows.append({"Date": label, "Earnings": eps, "Revenue": rev})
+
+        if not rows:
+            return pd.DataFrame(columns=["Earnings", "Revenue"])
+
+        df = pd.DataFrame(rows).set_index("Date")
+        df.index.name = "Date"
+        return df

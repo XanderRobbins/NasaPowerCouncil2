@@ -16,12 +16,15 @@ Standards applied to every output:
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 # ── Price history ─────────────────────────────────────────────────────────────
@@ -30,7 +33,15 @@ _PRICE_COLS = ["Open", "High", "Low", "Close", "Volume", "Dividends", "Stock Spl
 _FLOAT_PRICE_COLS = ["Open", "High", "Low", "Close", "Dividends", "Stock Splits", "Capital Gains", "Adj Close"]
 
 
-def clean_prices(df: pd.DataFrame, *, auto_adjust: bool = True, actions: bool = True) -> pd.DataFrame:
+def clean_prices(
+    df: pd.DataFrame,
+    *,
+    auto_adjust: bool = True,
+    actions: bool = True,
+    keepna: bool = False,
+    rounding: bool = False,
+    repair: bool = False,
+) -> pd.DataFrame:
     """Normalize a raw prices DataFrame.
 
     Parameters
@@ -40,6 +51,15 @@ def clean_prices(df: pd.DataFrame, *, auto_adjust: bool = True, actions: bool = 
                   are split- and dividend-adjusted.
     actions:      If True, keep Dividends and Stock Splits columns.
                   If False, drop them.
+    keepna:       If True, keep rows where all OHLCV values are NaN instead of
+                  dropping them (matches yfinance ``keepna=True`` behaviour).
+    rounding:     If True, round OHLC and Adj Close to 2 decimal places after
+                  all other processing.
+    repair:       If True, attempt to detect and fix common data quality issues:
+                  - 100× unit errors (Yahoo occasionally returns prices in cents)
+                  - Split-unadjusted history (large single-bar jump with no
+                    recorded split, corrected by applying the inverse factor to
+                    all prior bars).
     """
     if df.empty:
         return df
@@ -65,11 +85,16 @@ def clean_prices(df: pd.DataFrame, *, auto_adjust: bool = True, actions: bool = 
     # Volume as int64 (fills NaN with 0)
     df["Volume"] = pd.to_numeric(df["Volume"], errors="coerce").fillna(0).astype("int64")
 
-    # Drop rows where OHLC are all NaN
-    df = df.dropna(subset=["Open", "High", "Low", "Close"], how="all")
+    # Optionally drop rows where OHLC are all NaN
+    if not keepna:
+        df = df.dropna(subset=["Open", "High", "Low", "Close"], how="all")
 
     # Adj Close fallback: use Close when not provided
     df["Adj Close"] = df["Adj Close"].fillna(df["Close"])
+
+    # Repair before adjustment so corrections act on raw prices
+    if repair:
+        df = repair_prices(df)
 
     # Auto-adjust: scale OHLC so Close == Adj Close
     if auto_adjust:
@@ -82,10 +107,106 @@ def clean_prices(df: pd.DataFrame, *, auto_adjust: bool = True, actions: bool = 
     # Sort ascending
     df = df.sort_index()
 
+    if rounding:
+        for col in ["Open", "High", "Low", "Close", "Adj Close"]:
+            if col in df.columns:
+                df[col] = df[col].round(2)
+
     if not actions:
         df = df.drop(columns=["Dividends", "Stock Splits", "Capital Gains"], errors="ignore")
 
     return df[_PRICE_COLS if actions else ["Open", "High", "Low", "Close", "Volume", "Adj Close"]]
+
+
+def repair_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """Detect and fix common OHLCV data quality issues.
+
+    Two classes of errors are corrected:
+
+    1. **100× unit errors** — Yahoo Finance occasionally returns historical
+       prices denominated in cents (pence for LSE stocks, fils for Gulf
+       markets, etc.) instead of the standard currency unit.  Any bar whose
+       Close is more than 20× the series median is divided by 100; any bar
+       whose Close is less than 1/20 of the median is multiplied by 100.
+
+    2. **Split-unadjusted history** — When Yahoo applies a stock split
+       going forward but leaves historical bars unadjusted, there is a large
+       discontinuous jump (or drop) at the split date with no corresponding
+       ``Stock Splits`` entry.  This function identifies those jumps,
+       recognises the implied split ratio, and retroactively scales all
+       prior OHLC bars by the inverse ratio so the series is continuous.
+
+    Parameters
+    ----------
+    df:   Price DataFrame **after** type coercion (float64 OHLC, UTC index)
+          but **before** auto-adjustment.  Must contain at least ``Close``.
+
+    Returns
+    -------
+    Corrected copy of the DataFrame.
+    """
+    if df.empty or "Close" not in df.columns or len(df) < 2:
+        return df
+
+    df = df.copy()
+    price_cols = [c for c in ["Open", "High", "Low", "Close", "Adj Close"] if c in df.columns]
+
+    # ── 1. 100× unit errors ────────────────────────────────────────────────────
+    median_close = df["Close"].median()
+    if median_close > 0:
+        too_high = df["Close"] > median_close * 20
+        too_low = (df["Close"] < median_close / 20) & (df["Close"] > 0)
+        if too_high.any():
+            logger.debug("repair: divided %d rows by 100 (unit error)", too_high.sum())
+            for col in price_cols:
+                df.loc[too_high, col] /= 100
+        if too_low.any():
+            logger.debug("repair: multiplied %d rows by 100 (unit error)", too_low.sum())
+            for col in price_cols:
+                df.loc[too_low, col] *= 100
+
+    # ── 2. Split-unadjusted history ────────────────────────────────────────────
+    # Common exact split ratios and their reciprocals
+    _SPLIT_FACTORS = [
+        2.0, 3.0, 4.0, 5.0, 10.0,
+        1 / 2, 1 / 3, 1 / 4, 1 / 5, 1 / 10,
+        1.5, 2.5, 3 / 2,
+    ]
+    _TOLERANCE = 0.06  # ±6% around each factor
+
+    close = df["Close"]
+    pct_change = close.pct_change().abs()
+    recorded_splits = df.get("Stock Splits", pd.Series(0.0, index=df.index)).fillna(0)
+
+    # Candidate bars: single-day move ≥ 40% AND no split recorded that day
+    candidates = pct_change[
+        (pct_change >= 0.40) & ((recorded_splits == 0) | recorded_splits.isna())
+    ].index
+
+    for idx in candidates:
+        loc = df.index.get_loc(idx)
+        if loc == 0:
+            continue
+        prev = df["Close"].iloc[loc - 1]
+        curr = df["Close"].iloc[loc]
+        if prev <= 0 or curr <= 0:
+            continue
+        ratio = curr / prev
+        for factor in _SPLIT_FACTORS:
+            if abs(ratio / factor - 1.0) <= _TOLERANCE:
+                # ratio ≈ factor: scale prior bars by ratio so the series is
+                # continuous.  e.g. 2:1 split → ratio=0.5, prior bars halved;
+                # 1:2 reverse split → ratio=2.0, prior bars doubled.
+                for col in price_cols:
+                    df.iloc[:loc, df.columns.get_loc(col)] *= ratio
+                logger.debug(
+                    "repair: corrected split artifact at %s "
+                    "(ratio=%.4f, factor=%.4f, adjusted %d prior bars)",
+                    idx, ratio, factor, loc,
+                )
+                break
+
+    return df
 
 
 def extract_dividends(df: pd.DataFrame) -> pd.Series:

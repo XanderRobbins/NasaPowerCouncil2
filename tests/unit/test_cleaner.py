@@ -88,6 +88,76 @@ class TestCleanPrices:
         df = cleaner.clean_prices(raw, auto_adjust=False)
         assert df.index.tz == timezone.utc
 
+    def test_keepna_preserves_nan_rows(self):
+        raw = _make_raw_prices(3)
+        raw.loc[raw.index[1], ["Open", "High", "Low", "Close"]] = np.nan
+        df_drop = cleaner.clean_prices(raw, auto_adjust=False, keepna=False)
+        df_keep = cleaner.clean_prices(raw, auto_adjust=False, keepna=True)
+        assert len(df_drop) == 2
+        assert len(df_keep) == 3
+
+    def test_rounding_clips_to_2dp(self):
+        raw = _make_raw_prices(3)
+        raw["Close"] = [185.12345, 186.98765, 187.55555]
+        raw["Adj Close"] = raw["Close"]
+        df = cleaner.clean_prices(raw, auto_adjust=False, rounding=True)
+        for val in df["Close"]:
+            assert round(val, 2) == val
+
+
+class TestRepairPrices:
+    def _make_split_artifact(self) -> pd.DataFrame:
+        """Pre-split bars at 2× price, split bar at correct price, no recorded split."""
+        idx = pd.date_range("2024-01-02", periods=5, freq="D", tz="UTC", name="Date")
+        # Bars 0-2 are at ~370 (2× too high — unadjusted pre-split data)
+        # Bar 3 is at ~185 (correct post-split price)
+        # Bar 4 continues at ~186
+        closes = [370.0, 371.0, 372.0, 186.0, 187.0]
+        data = {
+            "Open": closes,
+            "High": [c + 1 for c in closes],
+            "Low": [c - 1 for c in closes],
+            "Close": closes,
+            "Adj Close": closes,
+            "Volume": [50_000_000] * 5,
+            "Dividends": [0.0] * 5,
+            "Stock Splits": [0.0] * 5,
+            "Capital Gains": [0.0] * 5,
+        }
+        return pd.DataFrame(data, index=idx)
+
+    def test_repair_fixes_split_artifact(self):
+        raw = self._make_split_artifact()
+        repaired = cleaner.repair_prices(raw)
+        # Pre-split bars should be halved
+        assert repaired["Close"].iloc[0] == pytest.approx(185.0)
+        assert repaired["Close"].iloc[1] == pytest.approx(185.5)
+        # Post-split bars unchanged
+        assert repaired["Close"].iloc[3] == pytest.approx(186.0)
+
+    def test_repair_fixes_100x_unit_error(self):
+        # Use include_events=False so n=5 doesn't hit the 3-element Dividends list
+        raw = _make_raw_prices(5, include_events=False)
+        # Introduce one bar at 100× the median
+        raw.iloc[2, raw.columns.get_loc("Close")] = 18500.0
+        raw.iloc[2, raw.columns.get_loc("Open")] = 18500.0
+        raw.iloc[2, raw.columns.get_loc("High")] = 18501.0
+        raw.iloc[2, raw.columns.get_loc("Low")] = 18499.0
+        raw.iloc[2, raw.columns.get_loc("Adj Close")] = 18500.0
+        repaired = cleaner.repair_prices(raw)
+        # Should be divided back to ~185
+        assert repaired["Close"].iloc[2] == pytest.approx(185.0)
+
+    def test_repair_no_change_on_clean_data(self):
+        raw = _make_raw_prices(3)  # 3 rows avoids the hardcoded-Dividends length issue
+        repaired = cleaner.repair_prices(raw)
+        pd.testing.assert_frame_equal(raw, repaired)
+
+    def test_clean_prices_repair_flag(self):
+        raw = self._make_split_artifact()
+        df = cleaner.clean_prices(raw, auto_adjust=False, repair=True)
+        assert df["Close"].iloc[0] == pytest.approx(185.0)
+
 
 class TestExtractDividendsSplits:
     def test_extract_dividends_filters_zeros(self):

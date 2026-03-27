@@ -134,6 +134,8 @@ class Ticker:
         actions: bool = True,
         prepost: bool = False,
         repair: bool = False,
+        keepna: bool = False,
+        rounding: bool = False,
     ) -> pd.DataFrame:
         """Fetch OHLCV price history.
 
@@ -148,6 +150,13 @@ class Ticker:
         start / end:  ISO date strings or date objects.
         auto_adjust:  Adjust all OHLC for splits and dividends (default True).
         actions:      Include Dividends and Stock Splits columns (default True).
+        repair:       Detect and fix data quality issues:
+                      - 100× unit errors (prices in wrong currency denomination)
+                      - Split-unadjusted historical bars (large jump with no
+                        recorded split; prior bars are scaled by inverse ratio)
+        keepna:       Keep rows where all OHLCV values are NaN rather than
+                      dropping them (default False).
+        rounding:     Round OHLC and Adj Close to 2 decimal places (default False).
 
         Returns
         -------
@@ -168,7 +177,14 @@ class Ticker:
             return await self._yahoo.fetch_prices(params, client=client)
 
         raw = _run(_fetch())
-        return cleaner.clean_prices(raw, auto_adjust=auto_adjust, actions=actions)
+        return cleaner.clean_prices(
+            raw,
+            auto_adjust=auto_adjust,
+            actions=actions,
+            repair=repair,
+            keepna=keepna,
+            rounding=rounding,
+        )
 
     # ── Dividends / splits / capital gains ───────────────────────────────────
 
@@ -506,6 +522,43 @@ class Ticker:
         """Analyst consensus price targets and recommendation."""
         raw_info = self._cached("info_raw", self._fetch_info_raw_async)
         return YahooSource.parse_analyst_targets(raw_info)
+
+    # ── Sustainability (ESG) ──────────────────────────────────────────────────
+
+    @property
+    def sustainability(self) -> pd.DataFrame:
+        """ESG scores — environment, social, governance, peer percentile.
+
+        Returns a DataFrame with index = metric name, column = 'Value'.
+        Returns an empty DataFrame for assets without ESG coverage.
+        """
+        async def _fetch() -> dict[str, Any]:
+            client = await self._get_client()
+            return await self._yahoo.fetch_esg(self._symbol, client=client)
+        raw = self._cached("esg_raw", _fetch)
+        return YahooSource.parse_sustainability(raw)
+
+    # ── Earnings summary ──────────────────────────────────────────────────────
+
+    @property
+    def earnings(self) -> pd.DataFrame:
+        """Annual EPS and Revenue summary.
+
+        Returns a DataFrame indexed by fiscal year with columns
+        ``['Earnings', 'Revenue']``.  Values are raw (unadjusted) totals.
+        """
+        raw = self._get_events()
+        return YahooSource.parse_earnings_summary(raw, quarterly=False)
+
+    @property
+    def quarterly_earnings(self) -> pd.DataFrame:
+        """Quarterly EPS and Revenue summary.
+
+        Returns a DataFrame indexed by quarter label (e.g. '1Q2024') with
+        columns ``['Earnings', 'Revenue']``.
+        """
+        raw = self._get_events()
+        return YahooSource.parse_earnings_summary(raw, quarterly=True)
 
     # ── News ──────────────────────────────────────────────────────────────────
 

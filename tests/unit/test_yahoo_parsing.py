@@ -186,3 +186,90 @@ class TestYahooAnalystTargets:
     def test_parse_analyst_targets_empty(self):
         result = YahooSource.parse_analyst_targets({})
         assert isinstance(result, dict)
+
+
+class TestYahooSustainability:
+    _ESG_RAW = {
+        "esgScores": {
+            "totalEsg": {"raw": 18.5, "fmt": "18.50"},
+            "environmentScore": {"raw": 5.1, "fmt": "5.10"},
+            "socialScore": {"raw": 7.2, "fmt": "7.20"},
+            "governanceScore": {"raw": 6.2, "fmt": "6.20"},
+            "esgPerformance": "UNDER_PERF",
+            "peerGroup": "Technology",
+            "peerCount": 51,
+            "percentile": {"raw": 25.0, "fmt": "25.00"},
+            "ratingYear": 2024,
+            "ratingMonth": 1,
+            "highestControversy": 3,
+            "relatedControversy": ["Business Ethics", "Tax Fraud"],
+            "maxAge": 86400,
+        }
+    }
+
+    def test_esg_scores_extracted(self):
+        df = YahooSource.parse_sustainability(self._ESG_RAW)
+        assert not df.empty
+        assert "Total ESG Score" in df.index
+        assert df.loc["Total ESG Score", "Value"] == pytest.approx(18.5)
+
+    def test_environment_social_governance_scores(self):
+        df = YahooSource.parse_sustainability(self._ESG_RAW)
+        assert "Environment Score" in df.index
+        assert "Social Score" in df.index
+        assert "Governance Score" in df.index
+
+    def test_controversies_joined(self):
+        df = YahooSource.parse_sustainability(self._ESG_RAW)
+        assert "Related Controversies" in df.index
+        assert "Business Ethics" in str(df.loc["Related Controversies", "Value"])
+
+    def test_peer_group_present(self):
+        df = YahooSource.parse_sustainability(self._ESG_RAW)
+        assert "Peer Group" in df.index
+        assert df.loc["Peer Group", "Value"] == "Technology"
+
+    def test_empty_returns_empty_df(self):
+        df = YahooSource.parse_sustainability({})
+        assert df.empty
+
+
+class TestYahooEarningsSummary:
+    _EARNINGS_RAW = {
+        "earnings": {
+            "financialsChart": {
+                "yearly": [
+                    {"date": 2022, "revenue": {"raw": 394_328_000_000}, "earnings": {"raw": 99_803_000_000}},
+                    {"date": 2023, "revenue": {"raw": 383_285_000_000}, "earnings": {"raw": 97_000_000_000}},
+                ],
+                "quarterly": [
+                    {"date": "1Q2024", "revenue": {"raw": 90_753_000_000}, "earnings": {"raw": 23_636_000_000}},
+                    {"date": "2Q2024", "revenue": {"raw": 85_777_000_000}, "earnings": {"raw": 21_448_000_000}},
+                ],
+            }
+        }
+    }
+
+    def test_yearly_returns_correct_rows(self):
+        df = YahooSource.parse_earnings_summary(self._EARNINGS_RAW, quarterly=False)
+        assert len(df) == 2
+        assert "2023" in df.index or 2023 in df.index
+
+    def test_yearly_columns(self):
+        df = YahooSource.parse_earnings_summary(self._EARNINGS_RAW, quarterly=False)
+        assert "Earnings" in df.columns
+        assert "Revenue" in df.columns
+
+    def test_yearly_revenue_value(self):
+        df = YahooSource.parse_earnings_summary(self._EARNINGS_RAW, quarterly=False)
+        revenues = list(df["Revenue"])
+        assert pytest.approx(394_328_000_000) in revenues
+
+    def test_quarterly_returns_correct_rows(self):
+        df = YahooSource.parse_earnings_summary(self._EARNINGS_RAW, quarterly=True)
+        assert len(df) == 2
+        assert "1Q2024" in df.index
+
+    def test_empty_module_returns_empty_df(self):
+        df = YahooSource.parse_earnings_summary({}, quarterly=False)
+        assert df.empty
