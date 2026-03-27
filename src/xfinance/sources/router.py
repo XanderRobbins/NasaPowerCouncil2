@@ -97,10 +97,12 @@ def _build_registry(*, discover_plugins: bool) -> dict[str, DataSource]:
     from xfinance.sources.coingecko import CoinGeckoSource
     from xfinance.sources.ecb import ECBSource
     from xfinance.sources.sec import SECSource
+    from xfinance.sources.stooq import StooqSource
     from xfinance.sources.yahoo import YahooSource
 
+    # Priority order: Yahoo first, Stooq as equity fallback, then SEC/ECB/crypto
     registry: dict[str, DataSource] = {}
-    for cls in [YahooSource, SECSource, ECBSource, BinanceSource, CoinGeckoSource]:
+    for cls in [YahooSource, StooqSource, SECSource, ECBSource, BinanceSource, CoinGeckoSource]:
         inst = cls()
         registry[inst.meta.name] = inst  # type: ignore[arg-type]
 

@@ -58,6 +58,7 @@ dev = [
 
 [project.entry-points."xfinance.sources"]
 yahoo = "xfinance.sources.yahoo:YahooSource"
+stooq = "xfinance.sources.stooq:StooqSource"
 sec = "xfinance.sources.sec:SECSource"
 ecb = "xfinance.sources.ecb:ECBSource"
 binance = "xfinance.sources.binance:BinanceSource"

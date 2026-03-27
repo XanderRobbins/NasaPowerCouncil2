@@ -58,6 +58,9 @@ from xfinance.exceptions import (
     SymbolNotFoundError,
     XFinanceError,
 )
+from xfinance.search import Search
+from xfinance.sector import Industry, Sector
+from xfinance.stream import stream, stream_sync
 from xfinance.ticker import Ticker
 
 __version__ = "0.2.0"
@@ -65,6 +68,11 @@ __all__ = [
     "Ticker",
     "download",
     "configure_logging",
+    "Search",
+    "Sector",
+    "Industry",
+    "stream",
+    "stream_sync",
     # Exceptions
     "XFinanceError",
     "SourceError",

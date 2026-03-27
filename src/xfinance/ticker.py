@@ -378,6 +378,20 @@ class Ticker:
             return df
         return df[df["Transaction"].str.contains("Purchase|Buy", case=False, na=False)].reset_index(drop=True)
 
+    @property
+    def mutualfund_holders(self) -> pd.DataFrame:
+        """Top mutual fund holders with shares and % held."""
+        raw = self._get_holders()
+        df = YahooSource.parse_mutualfund_holders(raw)
+        return cleaner.clean_holders(df)
+
+    @property
+    def insider_roster_holders(self) -> pd.DataFrame:
+        """Full insider roster — names, positions, and shares held directly/indirectly."""
+        raw = self._get_holders()
+        df = YahooSource.parse_insider_roster_holders(raw)
+        return cleaner.clean_holders(df)
+
     # ── Events / earnings ─────────────────────────────────────────────────────
 
     def _get_events(self) -> dict[str, Any]:
@@ -403,6 +417,65 @@ class Ticker:
     @property
     def earnings_history(self) -> pd.DataFrame:
         return self.earnings_dates
+
+    def get_earnings_dates(self, limit: int = 12) -> pd.DataFrame:
+        """Return earnings dates — past (with actuals) and upcoming (estimates only).
+
+        Parameters
+        ----------
+        limit:  Maximum number of dates to return (default 12, newest first).
+
+        Returns
+        -------
+        DataFrame indexed by earnings date with columns:
+        EPS Estimate, Reported EPS, Surprise(%), Period.
+        Upcoming rows have NaN in Reported EPS and Surprise.
+        """
+        from datetime import datetime, timezone
+
+        events = self._get_events()
+        cal = YahooSource.parse_calendar(events)
+
+        # Build rows for upcoming dates from calendar
+        upcoming_rows = []
+        for ds in cal.get("Earnings Date", []):
+            try:
+                dt = datetime.strptime(ds, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            upcoming_rows.append({
+                "Date": dt,
+                "EPS Estimate": cal.get("EPS Estimate"),
+                "Reported EPS": float("nan"),
+                "Surprise(%)": float("nan"),
+                "Period": "future",
+            })
+
+        # Build rows for historical dates from earningsHistory
+        raw = YahooSource.parse_earnings_dates(events)
+        hist_rows = []
+        if not raw.empty:
+            for _, row in raw.iterrows():
+                try:
+                    dt = datetime.strptime(str(row.get("Date", "")), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    continue
+                hist_rows.append({
+                    "Date": dt,
+                    "EPS Estimate": row.get("EPS Estimate"),
+                    "Reported EPS": row.get("Reported EPS"),
+                    "Surprise(%)": row.get("Surprise(%)"),
+                    "Period": row.get("Period", ""),
+                })
+
+        all_rows = upcoming_rows + hist_rows
+        if not all_rows:
+            return pd.DataFrame(columns=["EPS Estimate", "Reported EPS", "Surprise(%)", "Period"])
+
+        df = pd.DataFrame(all_rows)
+        df = df.set_index("Date").sort_index(ascending=False)
+        df.index.name = "Earnings Date"
+        return df.head(limit)
 
     # ── Recommendations ───────────────────────────────────────────────────────
 

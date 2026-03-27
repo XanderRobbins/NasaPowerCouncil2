@@ -72,7 +72,7 @@ _FINANCIALS_MODULES = (
 )
 _HOLDERS_MODULES = (
     "institutionOwnership,majorHoldersBreakdown,"
-    "insiderTransactions,insiderHolders,netSharePurchaseActivity"
+    "insiderTransactions,insiderHolders,netSharePurchaseActivity,fundOwnership"
 )
 _EVENTS_MODULES = (
     "calendarEvents,earnings,earningsHistory,earningsTrend,upgradeDowngradeHistory"
@@ -598,6 +598,45 @@ class YahooSource:
         df = pd.DataFrame(rows)
         if not df.empty and "Date" in df.columns:
             df = df.sort_values("Date", ascending=False).reset_index(drop=True)
+        return df
+
+    @staticmethod
+    def parse_mutualfund_holders(raw: dict[str, Any]) -> pd.DataFrame:
+        """Parse mutual fund ownership from fundOwnership module."""
+        owners = raw.get("fundOwnership", {}).get("ownershipList", [])
+        rows = []
+        for o in owners:
+            report_date = o.get("reportDate", {})
+            rows.append({
+                "Date Reported": report_date.get("fmt") if isinstance(report_date, dict) else report_date,
+                "Holder": o.get("organization", ""),
+                "pctHeld": safe_float(extract_raw(o.get("pctHeld"))),
+                "Shares": safe_int(extract_raw(o.get("position"))),
+                "Value": safe_int(extract_raw(o.get("value"))),
+            })
+        return pd.DataFrame(rows)
+
+    @staticmethod
+    def parse_insider_roster_holders(raw: dict[str, Any]) -> pd.DataFrame:
+        """Parse insider roster from insiderHolders module."""
+        holders = raw.get("insiderHolders", {}).get("holders", [])
+        rows = []
+        for h in holders:
+            latest_date = h.get("latestTransDate", {})
+            pos_direct_date = h.get("positionDirectDate", {})
+            rows.append({
+                "Name": h.get("name", ""),
+                "Position": h.get("relation", ""),
+                "URL": h.get("url", ""),
+                "Most Recent Transaction": h.get("transactionDescription", ""),
+                "Latest Transaction Date": latest_date.get("fmt") if isinstance(latest_date, dict) else latest_date,
+                "Shares Owned Directly": safe_int(extract_raw(h.get("positionDirect"))),
+                "Position Direct Date": pos_direct_date.get("fmt") if isinstance(pos_direct_date, dict) else pos_direct_date,
+                "Shares Owned Indirectly": safe_int(extract_raw(h.get("positionIndirect"))),
+            })
+        df = pd.DataFrame(rows)
+        if not df.empty and "Latest Transaction Date" in df.columns:
+            df = df.sort_values("Latest Transaction Date", ascending=False).reset_index(drop=True)
         return df
 
     @staticmethod

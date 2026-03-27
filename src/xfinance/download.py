@@ -56,6 +56,7 @@ async def _download_async(
     auto_adjust: bool,
     actions: bool,
     threads: bool,
+    multi_level_index: bool,
 ) -> pd.DataFrame:
     yahoo = YahooSource()
 
@@ -89,7 +90,7 @@ async def _download_async(
     if not frames:
         return pd.DataFrame()
 
-    if len(frames) == 1:
+    if len(frames) == 1 and not multi_level_index:
         sym = list(frames.keys())[0]
         return frames[sym]
 
@@ -129,6 +130,7 @@ def download(
     actions: bool = False,
     threads: bool = True,
     ignore_tz: bool = True,
+    multi_level_index: bool = True,
 ) -> pd.DataFrame:
     """Download OHLCV data for one or multiple symbols concurrently.
 
@@ -156,6 +158,10 @@ def download(
     ignore_tz:
         Strip timezone info from the DatetimeIndex (default True, matching
         yfinance behaviour for consistency with downstream tools).
+    multi_level_index:
+        When True (default), always return a MultiIndex DataFrame for multiple
+        tickers. When False, return a plain DataFrame for single-ticker downloads.
+        Mirrors yfinance's ``multi_level_index`` parameter.
 
     Returns
     -------
@@ -200,6 +206,7 @@ def download(
                     auto_adjust=auto_adjust,
                     actions=actions,
                     threads=threads,
+                    multi_level_index=multi_level_index,
                 ),
             ).result()
     else:
