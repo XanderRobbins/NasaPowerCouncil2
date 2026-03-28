@@ -44,7 +44,7 @@ Quick start
 
 from __future__ import annotations
 
-from xfinance._logging import configure_logging
+from xfinance._logging import configure_logging, enable_debug_mode
 from xfinance.download import download
 from xfinance.exceptions import (
     AllSourcesFailedError,
@@ -59,7 +59,7 @@ from xfinance.exceptions import (
     XFinanceError,
 )
 from xfinance.market import Market
-from xfinance.screener import EquityQuery, FundQuery, Screener
+from xfinance.screener import EquityQuery, FundQuery, Screener, screen
 from xfinance.search import Search
 from xfinance.sector import Industry, Sector
 from xfinance.stream import stream, stream_sync
@@ -72,6 +72,8 @@ __all__ = [
     "Tickers",
     "download",
     "configure_logging",
+    "enable_debug_mode",
+    "screen",
     "Search",
     "Sector",
     "Industry",

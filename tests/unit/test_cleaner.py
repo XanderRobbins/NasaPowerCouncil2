@@ -204,6 +204,19 @@ class TestCleanFinancialStatement:
         cleaned = cleaner.clean_financial_statement(pd.DataFrame())
         assert cleaned.empty
 
+    def test_columns_are_timestamps(self, yahoo_income_stmt_module):
+        from xfinance.sources.yahoo import YahooSource
+        df = YahooSource.parse_financial_statement(yahoo_income_stmt_module, "incomeStatementHistory")
+        cleaned = cleaner.clean_financial_statement(df)
+        assert all(isinstance(c, pd.Timestamp) for c in cleaned.columns)
+
+    def test_timestamp_columns_year_access(self, yahoo_income_stmt_module):
+        from xfinance.sources.yahoo import YahooSource
+        df = YahooSource.parse_financial_statement(yahoo_income_stmt_module, "incomeStatementHistory")
+        cleaned = cleaner.clean_financial_statement(df)
+        # yfinance-compatible: df.columns[0].year works
+        assert cleaned.columns[0].year == 2023
+
 
 class TestCleanOptions:
     def test_float_columns(self, yahoo_options_chain):

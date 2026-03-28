@@ -272,6 +272,7 @@ def clean_financial_statement(df: pd.DataFrame) -> pd.DataFrame:
     try:
         sorted_cols = sorted(df.columns, key=lambda c: pd.Timestamp(c), reverse=True)
         df = df[sorted_cols]
+        df.columns = pd.to_datetime(df.columns)
     except Exception:
         pass
 

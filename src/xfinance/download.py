@@ -61,10 +61,14 @@ async def _download_async(
     keepna: bool,
     rounding: bool,
     prepost: bool,
+    proxy: str | None = None,
 ) -> pd.DataFrame:
     yahoo = YahooSource()
 
-    async with httpx.AsyncClient(http2=True, follow_redirects=True) as client:
+    client_kwargs: dict = {"http2": True, "follow_redirects": True}
+    if proxy:
+        client_kwargs["proxies"] = proxy
+    async with httpx.AsyncClient(**client_kwargs) as client:
         tasks = []
         for sym in symbols:
             params = PricesParams(
@@ -159,6 +163,7 @@ def download(
     rounding: bool = False,
     prepost: bool = False,
     progress: bool = True,
+    proxy: str | None = None,
 ) -> pd.DataFrame:
     """Download OHLCV data for one or multiple symbols concurrently.
 
@@ -259,6 +264,7 @@ def download(
                     keepna=keepna,
                     rounding=rounding,
                     prepost=prepost,
+                    proxy=proxy,
                 ),
             ).result()
     else:
@@ -271,8 +277,15 @@ def download(
                 interval=interval,
                 group_by=group_by,
                 auto_adjust=auto_adjust,
+                back_adjust=back_adjust,
                 actions=actions,
                 threads=threads,
+                multi_level_index=multi_level_index,
+                repair=repair,
+                keepna=keepna,
+                rounding=rounding,
+                prepost=prepost,
+                proxy=proxy,
             )
         )
 

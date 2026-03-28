@@ -301,3 +301,24 @@ class Screener:
     def __repr__(self) -> str:
         sid = self._screen_id or "custom"
         return f"xfinance.Screener(screen_id={sid!r}, count={self._count})"
+
+
+def screen(screen_id: str, *, count: int = 25, **kwargs: Any) -> list[dict[str, Any]]:
+    """Shorthand for ``Screener(screen_id=screen_id, count=count).results``.
+
+    Parameters
+    ----------
+    screen_id:
+        Predefined Yahoo screener ID, e.g. ``"most_actives"``,
+        ``"day_gainers"``, ``"day_losers"``, ``"undervalued_growth_stocks"``.
+    count:
+        Maximum number of results to return (default 25).
+    **kwargs:
+        Additional keyword arguments forwarded to :class:`Screener`.
+
+    Examples
+    --------
+    >>> xf.screen("most_actives")
+    >>> xf.screen("day_gainers", count=50)
+    """
+    return Screener(screen_id=screen_id, count=count, **kwargs).results

@@ -9,6 +9,11 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"xfinance.{name}")
 
 
+def enable_debug_mode() -> None:
+    """Enable DEBUG-level logging for all xfinance loggers."""
+    configure_logging(level="DEBUG")
+
+
 def configure_logging(level: int | str = logging.WARNING) -> None:
     """Configure the xfinance root logger."""
     root = logging.getLogger("xfinance")
