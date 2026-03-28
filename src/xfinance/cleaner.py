@@ -42,6 +42,7 @@ def clean_prices(
     keepna: bool = False,
     rounding: bool = False,
     repair: bool = False,
+    na_fill: str | int | float | None = None,
 ) -> pd.DataFrame:
     """Normalize a raw prices DataFrame.
 
@@ -66,6 +67,11 @@ def clean_prices(
                   - Split-unadjusted history (large single-bar jump with no
                     recorded split, corrected by applying the inverse factor to
                     all prior bars).
+    na_fill:      How to fill remaining NaN values after all other processing.
+                  ``None``    — leave as NaN (default).
+                  ``'ffill'`` — forward-fill (carry last known value forward).
+                  ``'bfill'`` — backward-fill (carry next known value back).
+                  Any scalar  — fill with that value (e.g. ``0``).
     """
     if df.empty:
         return df
@@ -135,7 +141,17 @@ def clean_prices(
     if not actions:
         df = df.drop(columns=["Dividends", "Stock Splits", "Capital Gains"], errors="ignore")
 
-    return df[_PRICE_COLS if actions else ["Open", "High", "Low", "Close", "Volume", "Adj Close"]]
+    result = df[_PRICE_COLS if actions else ["Open", "High", "Low", "Close", "Volume", "Adj Close"]]
+
+    if na_fill is not None:
+        if na_fill == "ffill":
+            result = result.ffill()
+        elif na_fill == "bfill":
+            result = result.bfill()
+        else:
+            result = result.fillna(na_fill)
+
+    return result
 
 
 def repair_prices(df: pd.DataFrame) -> pd.DataFrame:

@@ -229,6 +229,7 @@ class Ticker:
         repair: bool = False,
         keepna: bool = False,
         rounding: bool = False,
+        na_fill: str | int | float | None = None,
     ) -> pd.DataFrame:
         """Fetch OHLCV price history.
 
@@ -250,6 +251,11 @@ class Ticker:
         keepna:       Keep rows where all OHLCV values are NaN rather than
                       dropping them (default False).
         rounding:     Round OHLC and Adj Close to 2 decimal places (default False).
+        na_fill:      How to fill remaining NaN values after all other processing.
+                      ``None``    — leave as NaN (default).
+                      ``'ffill'`` — forward-fill (carry last known value forward).
+                      ``'bfill'`` — backward-fill (carry next known value back).
+                      Any scalar  — fill with that value (e.g. ``0``).
 
         Returns
         -------
@@ -280,6 +286,7 @@ class Ticker:
             repair=repair,
             keepna=keepna,
             rounding=rounding,
+            na_fill=na_fill,
         )
 
     # ── Dividends / splits / capital gains ───────────────────────────────────

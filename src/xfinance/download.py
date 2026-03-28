@@ -62,6 +62,7 @@ async def _download_async(
     rounding: bool,
     prepost: bool,
     proxy: str | None = None,
+    na_fill: str | int | float | None = None,
 ) -> pd.DataFrame:
     yahoo = YahooSource()
 
@@ -100,6 +101,8 @@ async def _download_async(
                 # index is preserved after concat; apply keepna post-concat.
                 keepna=True if len(symbols) > 1 else keepna,
                 rounding=rounding,
+                # For multi-symbol, apply na_fill post-concat on the combined df.
+                na_fill=na_fill if len(symbols) == 1 else None,
             )
             frames[sym] = df
 
@@ -141,6 +144,15 @@ async def _download_async(
         if close_cols is not None:
             combined = combined[close_cols.notna().any(axis=1)]
 
+    # na_fill post-concat for multi-symbol
+    if na_fill is not None and len(symbols) > 1:
+        if na_fill == "ffill":
+            combined = combined.ffill()
+        elif na_fill == "bfill":
+            combined = combined.bfill()
+        else:
+            combined = combined.fillna(na_fill)
+
     return combined
 
 
@@ -164,6 +176,7 @@ def download(
     prepost: bool = False,
     progress: bool = True,
     proxy: str | None = None,
+    na_fill: str | int | float | None = None,
 ) -> pd.DataFrame:
     """Download OHLCV data for one or multiple symbols concurrently.
 
@@ -265,6 +278,7 @@ def download(
                     rounding=rounding,
                     prepost=prepost,
                     proxy=proxy,
+                    na_fill=na_fill,
                 ),
             ).result()
     else:
@@ -286,6 +300,7 @@ def download(
                 rounding=rounding,
                 prepost=prepost,
                 proxy=proxy,
+                na_fill=na_fill,
             )
         )
 

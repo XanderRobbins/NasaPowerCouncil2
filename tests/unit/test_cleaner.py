@@ -104,6 +104,32 @@ class TestCleanPrices:
         for val in df["Close"]:
             assert round(val, 2) == val
 
+    def test_na_fill_none_leaves_nans(self):
+        raw = _make_raw_prices(3)
+        raw.loc[raw.index[1], "Close"] = np.nan
+        df = cleaner.clean_prices(raw, auto_adjust=False, keepna=True, na_fill=None)
+        assert df["Close"].isna().any()
+
+    def test_na_fill_ffill(self):
+        raw = _make_raw_prices(3)
+        raw.loc[raw.index[1], ["Open", "High", "Low", "Close", "Adj Close"]] = np.nan
+        df = cleaner.clean_prices(raw, auto_adjust=False, keepna=True, na_fill="ffill")
+        assert not df["Close"].isna().any()
+        assert df["Close"].iloc[1] == df["Close"].iloc[0]
+
+    def test_na_fill_bfill(self):
+        raw = _make_raw_prices(3)
+        raw.loc[raw.index[1], ["Open", "High", "Low", "Close", "Adj Close"]] = np.nan
+        df = cleaner.clean_prices(raw, auto_adjust=False, keepna=True, na_fill="bfill")
+        assert not df["Close"].isna().any()
+        assert df["Close"].iloc[1] == df["Close"].iloc[2]
+
+    def test_na_fill_scalar_zero(self):
+        raw = _make_raw_prices(3)
+        raw.loc[raw.index[1], ["Open", "High", "Low", "Close", "Adj Close"]] = np.nan
+        df = cleaner.clean_prices(raw, auto_adjust=False, keepna=True, na_fill=0)
+        assert df["Close"].iloc[1] == 0.0
+
 
 class TestRepairPrices:
     def _make_split_artifact(self) -> pd.DataFrame:
