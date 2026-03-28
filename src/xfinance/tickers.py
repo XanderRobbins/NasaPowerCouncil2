@@ -48,7 +48,10 @@ class Tickers:
         proxy: str | None = None,
     ) -> None:
         if isinstance(tickers, str):
-            syms = [s.strip().upper() for s in tickers.split() if s.strip()]
+            # Accept both space-separated ("AAPL MSFT") and comma-separated
+            # ("AAPL, MSFT") or mixed ("AAPL,MSFT GOOGL").
+            import re as _re
+            syms = [s.strip().upper() for s in _re.split(r"[\s,]+", tickers) if s.strip()]
         else:
             syms = [str(t).strip().upper() for t in tickers if str(t).strip()]
 

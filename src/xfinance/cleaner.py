@@ -37,6 +37,7 @@ def clean_prices(
     df: pd.DataFrame,
     *,
     auto_adjust: bool = True,
+    back_adjust: bool = False,
     actions: bool = True,
     keepna: bool = False,
     rounding: bool = False,
@@ -47,8 +48,13 @@ def clean_prices(
     Parameters
     ----------
     df:           Raw DataFrame from a source adapter (index = Date).
-    auto_adjust:  If True, scale OHLC by Adj Close / Close ratio so all prices
-                  are split- and dividend-adjusted.
+    auto_adjust:  If True, scale OHLC forward so the most-recent prices
+                  are at their "true" current level (forward adjustment).
+    back_adjust:  If True, scale OHLC backward so the oldest prices stay at
+                  their historical level and recent prices are adjusted down
+                  by the total cumulative split/dividend factor.  When both
+                  *auto_adjust* and *back_adjust* are True, *back_adjust*
+                  takes precedence.
     actions:      If True, keep Dividends and Stock Splits columns.
                   If False, drop them.
     keepna:       If True, keep rows where all OHLCV values are NaN instead of
@@ -96,12 +102,26 @@ def clean_prices(
     if repair:
         df = repair_prices(df)
 
-    # Auto-adjust: scale OHLC so Close == Adj Close
-    if auto_adjust:
+    if back_adjust:
+        # Back-adjustment: oldest prices stay at their raw historical level;
+        # recent prices are scaled DOWN by the total cumulative factor so the
+        # entire series is self-consistent.
+        # Formula: back_adj[i] = adj_close[i] / total_factor
+        # where total_factor = adj_close[-1] / raw_close[-1]
+        last_raw = df["Close"].iloc[-1]
+        last_adj = df["Adj Close"].iloc[-1]
+        total_factor = last_adj / last_raw if last_raw != 0 else 1.0
+        if total_factor != 0:
+            per_bar_ratio = df["Adj Close"] / df["Close"].replace(0, np.nan) / total_factor
+            for col in ["Open", "High", "Low", "Close"]:
+                df[col] = (df[col] * per_bar_ratio).round(6)
+            df["Adj Close"] = df["Close"]
+    elif auto_adjust:
+        # Forward-adjustment: most-recent prices stay at their true current
+        # level; historical prices are scaled UP by the cumulative factor.
         ratio = df["Adj Close"] / df["Close"].replace(0, np.nan)
         for col in ["Open", "High", "Low", "Close"]:
             df[col] = (df[col] * ratio).round(6)
-        # After adjusting, Adj Close == Close
         df["Adj Close"] = df["Close"]
 
     # Sort ascending

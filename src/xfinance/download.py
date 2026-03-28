@@ -86,13 +86,15 @@ async def _download_async(
         if isinstance(result, Exception):
             failed.append(sym)
         else:
-            effective_auto_adjust = auto_adjust or back_adjust
             df = cleaner.clean_prices(
                 result,
-                auto_adjust=effective_auto_adjust,
+                auto_adjust=auto_adjust,
+                back_adjust=back_adjust,
                 actions=actions,
                 repair=repair,
-                keepna=keepna,
+                # For multi-symbol, always keep NaN rows here so the shared
+                # index is preserved after concat; apply keepna post-concat.
+                keepna=True if len(symbols) > 1 else keepna,
                 rounding=rounding,
             )
             frames[sym] = df
@@ -128,6 +130,13 @@ async def _download_async(
         combined.columns.names = ["Ticker", "Price"]
 
     combined = combined.sort_index()
+
+    # keepna post-concat: drop rows where ALL symbols have NaN Close
+    if not keepna and len(symbols) > 1:
+        close_cols = combined.get("Close") if "Close" in combined.columns.get_level_values(0) else None
+        if close_cols is not None:
+            combined = combined[close_cols.notna().any(axis=1)]
+
     return combined
 
 

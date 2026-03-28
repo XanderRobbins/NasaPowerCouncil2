@@ -50,6 +50,99 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TTL = 300.0  # 5 minutes for cached properties
 
+# yfinance-compatible camelCase → snake_case attribute map for FastInfo
+_FAST_INFO_ATTRS: dict[str, str] = {
+    "last_price":               "regularMarketPrice",
+    "previous_close":           "regularMarketPreviousClose",
+    "open":                     "regularMarketOpen",
+    "day_high":                 "regularMarketDayHigh",
+    "day_low":                  "regularMarketDayLow",
+    "volume":                   "regularMarketVolume",
+    "three_month_average_volume": "averageDailyVolume3Month",
+    "market_cap":               "marketCap",
+    "shares":                   "sharesOutstanding",
+    "float_shares":             "floatShares",
+    "year_high":                "fiftyTwoWeekHigh",
+    "year_low":                 "fiftyTwoWeekLow",
+    "fifty_day_average":        "fiftyDayAverage",
+    "two_hundred_day_average":  "twoHundredDayAverage",
+    "currency":                 "currency",
+    "exchange":                 "exchange",
+    "quote_type":               "quoteType",
+    "timezone":                 "exchangeTimezoneName",
+    "symbol":                   "symbol",
+    "short_name":               "shortName",
+    "long_name":                "longName",
+}
+
+
+class FastInfo:
+    """Lightweight info object with both attribute and dict-style access.
+
+    Mirrors yfinance's ``FastInfo`` so code written for yfinance works
+    without modification.
+
+    Attribute access (yfinance style):
+        ``t.fast_info.market_cap``, ``t.fast_info.last_price``
+
+    Dict access (legacy style):
+        ``t.fast_info["marketCap"]``, ``t.fast_info["regularMarketPrice"]``
+
+    Both ``snake_case`` attribute names and original ``camelCase`` dict keys
+    are accepted.
+    """
+
+    def __init__(self, info: dict[str, Any]) -> None:
+        self._info = info
+        # Pre-compute snake_case → value mapping
+        self._attrs: dict[str, Any] = {
+            snake: info.get(camel)
+            for snake, camel in _FAST_INFO_ATTRS.items()
+        }
+
+    # ── Attribute access (t.fast_info.market_cap) ─────────────────────────────
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            attrs = object.__getattribute__(self, "_attrs")
+            if name in attrs:
+                return attrs[name]
+        except AttributeError:
+            pass
+        raise AttributeError(f"FastInfo has no attribute {name!r}")
+
+    # ── Dict-style access (t.fast_info["marketCap"]) ─────────────────────────
+
+    def __getitem__(self, key: str) -> Any:
+        # Accept both camelCase originals and snake_case aliases
+        if key in self._info:
+            return self._info[key]
+        if key in self._attrs:
+            return self._attrs[key]
+        raise KeyError(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def keys(self) -> list[str]:
+        return list(self._attrs.keys())
+
+    def items(self):
+        return self._attrs.items()
+
+    def __iter__(self):
+        return iter(self._attrs)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._info or key in self._attrs
+
+    def __repr__(self) -> str:
+        populated = {k: v for k, v in self._attrs.items() if v is not None}
+        return f"FastInfo({populated!r})"
+
 
 def _run(coro: Any) -> Any:
     """Run an async coroutine from sync context, including inside Jupyter."""
@@ -236,18 +329,18 @@ class Ticker:
         return self._cached("info", lambda: (lambda: _fetch())())  # type: ignore[return-value]
 
     @property
-    def fast_info(self) -> dict[str, Any]:
-        """Quick-access subset of info — only makes one lightweight API call."""
-        full = self.info
-        keys = [
-            "symbol", "shortName", "longName", "quoteType", "exchange",
-            "currency", "regularMarketPrice", "regularMarketPreviousClose",
-            "regularMarketOpen", "regularMarketDayHigh", "regularMarketDayLow",
-            "regularMarketVolume", "marketCap", "fiftyTwoWeekHigh",
-            "fiftyTwoWeekLow", "fiftyDayAverage", "twoHundredDayAverage",
-            "trailingPE", "forwardPE", "dividendYield", "beta",
-        ]
-        return {k: full.get(k) for k in keys if k in full}
+    def fast_info(self) -> FastInfo:
+        """Quick-access info object with attribute and dict-style access.
+
+        Supports both yfinance-compatible snake_case attributes and the
+        original camelCase dict keys::
+
+            t.fast_info.market_cap          # attribute (yfinance style)
+            t.fast_info["marketCap"]        # camelCase dict key
+            t.fast_info.last_price          # regularMarketPrice
+            t.fast_info.year_high           # fiftyTwoWeekHigh
+        """
+        return FastInfo(self.info)
 
     # ── Financial statements ──────────────────────────────────────────────────
 
@@ -653,6 +746,14 @@ class Ticker:
             return await self._yahoo.fetch_price_metadata(self._symbol, client=client)
 
         return self._cached("history_meta", _probe)  # type: ignore[return-value]
+
+    def get_history_metadata(self) -> dict[str, Any]:
+        """Return chart metadata dict (method form of ``history_metadata`` property).
+
+        Identical to ``t.history_metadata``; provided so that code written
+        for yfinance's ``get_history_metadata()`` method works unchanged.
+        """
+        return self.history_metadata
 
     # ── Financial statement method variants ────────────────────────────────────
 
