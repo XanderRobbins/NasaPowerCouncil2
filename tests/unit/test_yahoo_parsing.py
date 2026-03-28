@@ -278,3 +278,63 @@ class TestYahooEarningsSummary:
     def test_empty_module_returns_empty_df(self):
         df = YahooSource.parse_earnings_summary({}, quarterly=False)
         assert df.empty
+
+
+class TestParseEarningsTrend:
+    def test_returns_all_five_keys(self, yahoo_earnings_trend_module):
+        result = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)
+        for key in ("earnings_estimate", "revenue_estimate", "eps_trend", "eps_revisions", "growth_estimates"):
+            assert key in result
+
+    def test_earnings_estimate_shape(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["earnings_estimate"]
+        assert len(df) == 2
+        assert "avg" in df.columns
+        assert "low" in df.columns
+        assert "high" in df.columns
+        assert "yearAgoEps" in df.columns
+        assert "numberOfAnalysts" in df.columns
+        assert "growth" in df.columns
+
+    def test_earnings_estimate_values(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["earnings_estimate"]
+        assert df.loc["2024-03-31", "avg"] == pytest.approx(1.50)
+        assert df.loc["2024-03-31", "numberOfAnalysts"] == 15
+
+    def test_revenue_estimate_shape(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["revenue_estimate"]
+        assert len(df) == 2
+        assert "yearAgoRevenue" in df.columns
+
+    def test_revenue_estimate_values(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["revenue_estimate"]
+        assert df.loc["2024-03-31", "avg"] == pytest.approx(90_000_000_000)
+
+    def test_eps_trend_columns(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["eps_trend"]
+        assert set(df.columns) == {"current", "7daysAgo", "30daysAgo", "60daysAgo", "90daysAgo"}
+
+    def test_eps_trend_values(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["eps_trend"]
+        assert df.loc["2024-03-31", "current"] == pytest.approx(1.50)
+        assert df.loc["2024-03-31", "7daysAgo"] == pytest.approx(1.48)
+
+    def test_eps_revisions_columns(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["eps_revisions"]
+        assert "upLast7days" in df.columns
+        assert "downLast30days" in df.columns
+
+    def test_eps_revisions_values(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["eps_revisions"]
+        assert df.loc["2024-03-31", "upLast7days"] == 3
+        assert df.loc["2024-03-31", "downLast30days"] == 2
+
+    def test_growth_estimates_column(self, yahoo_earnings_trend_module):
+        df = YahooSource.parse_earnings_trend(yahoo_earnings_trend_module)["growth_estimates"]
+        assert "growth" in df.columns
+        assert df.loc["2024-03-31", "growth"] == pytest.approx(0.12)
+
+    def test_empty_module_returns_empty_dfs(self):
+        result = YahooSource.parse_earnings_trend({})
+        for key in ("earnings_estimate", "revenue_estimate", "eps_trend", "eps_revisions", "growth_estimates"):
+            assert result[key].empty

@@ -821,6 +821,90 @@ class YahooSource:
         return df
 
     @staticmethod
+    def parse_earnings_trend(raw: dict[str, Any]) -> dict[str, pd.DataFrame]:
+        """Parse the earningsTrend module into 5 analyst estimate DataFrames.
+
+        Returns a dict with keys:
+        - ``earnings_estimate``: avg/low/high/yearAgoEps/numberOfAnalysts/growth per period
+        - ``revenue_estimate``: avg/low/high/yearAgoRevenue/numberOfAnalysts/growth per period
+        - ``eps_trend``: current/7daysAgo/30daysAgo/60daysAgo/90daysAgo per period
+        - ``eps_revisions``: upLast7days/upLast30days/downLast30days/downLast90days per period
+        - ``growth_estimates``: growth rate per period (0q, +1q, 0y, +1y)
+
+        Each DataFrame is indexed by period label (e.g. '0q', '+1q', '0y', '+1y').
+        """
+        trend_list = raw.get("earningsTrend", {}).get("trend", [])
+
+        ee_rows, re_rows, et_rows, er_rows, ge_rows = [], [], [], [], []
+
+        for t in trend_list:
+            period = t.get("period", "")
+            end_date = t.get("endDate", period)
+
+            ee = t.get("earningsEstimate", {})
+            re_ = t.get("revenueEstimate", {})
+            et = t.get("epsTrend", {})
+            er = t.get("epsRevisions", {})
+            growth = t.get("growth", {})
+
+            ee_rows.append({
+                "Period": end_date,
+                "avg": safe_float(extract_raw(ee.get("avg"))),
+                "low": safe_float(extract_raw(ee.get("low"))),
+                "high": safe_float(extract_raw(ee.get("high"))),
+                "yearAgoEps": safe_float(extract_raw(ee.get("yearAgoEps"))),
+                "numberOfAnalysts": safe_int(extract_raw(ee.get("numberOfAnalysts"))),
+                "growth": safe_float(extract_raw(ee.get("growth"))),
+            })
+
+            re_rows.append({
+                "Period": end_date,
+                "avg": safe_float(extract_raw(re_.get("avg"))),
+                "low": safe_float(extract_raw(re_.get("low"))),
+                "high": safe_float(extract_raw(re_.get("high"))),
+                "yearAgoRevenue": safe_float(extract_raw(re_.get("yearAgoRevenue"))),
+                "numberOfAnalysts": safe_int(extract_raw(re_.get("numberOfAnalysts"))),
+                "growth": safe_float(extract_raw(re_.get("growth"))),
+            })
+
+            et_rows.append({
+                "Period": end_date,
+                "current": safe_float(extract_raw(et.get("current"))),
+                "7daysAgo": safe_float(extract_raw(et.get("7daysAgo"))),
+                "30daysAgo": safe_float(extract_raw(et.get("30daysAgo"))),
+                "60daysAgo": safe_float(extract_raw(et.get("60daysAgo"))),
+                "90daysAgo": safe_float(extract_raw(et.get("90daysAgo"))),
+            })
+
+            er_rows.append({
+                "Period": end_date,
+                "upLast7days": safe_int(extract_raw(er.get("upLast7days"))),
+                "upLast30days": safe_int(extract_raw(er.get("upLast30days"))),
+                "downLast30days": safe_int(extract_raw(er.get("downLast30days"))),
+                "downLast90days": safe_int(extract_raw(er.get("downLast90days"))),
+            })
+
+            ge_rows.append({
+                "Period": end_date,
+                "growth": safe_float(extract_raw(growth) if not isinstance(growth, dict) else growth.get("raw")),
+            })
+
+        def _to_df(rows: list[dict]) -> pd.DataFrame:
+            if not rows:
+                return pd.DataFrame()
+            df = pd.DataFrame(rows).set_index("Period")
+            df.index.name = "Period"
+            return df
+
+        return {
+            "earnings_estimate": _to_df(ee_rows),
+            "revenue_estimate": _to_df(re_rows),
+            "eps_trend": _to_df(et_rows),
+            "eps_revisions": _to_df(er_rows),
+            "growth_estimates": _to_df(ge_rows),
+        }
+
+    @staticmethod
     def parse_funds_data(raw: dict[str, Any]) -> dict[str, Any]:
         """Parse ETF/mutual fund data from topHoldings, fundProfile, fundPerformance modules.
 

@@ -656,6 +656,57 @@ class Ticker:
         raw = self._get_events()
         return YahooSource.parse_earnings_summary(raw, quarterly=True)
 
+    # ── Analyst estimate breakdowns ───────────────────────────────────────────
+
+    def _get_earnings_trend(self) -> dict[str, pd.DataFrame]:
+        raw = self._get_events()
+        return YahooSource.parse_earnings_trend(raw)
+
+    @property
+    def earnings_estimate(self) -> pd.DataFrame:
+        """Analyst EPS estimates by period (0q, +1q, 0y, +1y).
+
+        Columns: avg, low, high, yearAgoEps, numberOfAnalysts, growth.
+        Indexed by end date of each period.
+        """
+        return self._get_earnings_trend()["earnings_estimate"]
+
+    @property
+    def revenue_estimate(self) -> pd.DataFrame:
+        """Analyst revenue estimates by period (0q, +1q, 0y, +1y).
+
+        Columns: avg, low, high, yearAgoRevenue, numberOfAnalysts, growth.
+        Indexed by end date of each period.
+        """
+        return self._get_earnings_trend()["revenue_estimate"]
+
+    @property
+    def eps_trend(self) -> pd.DataFrame:
+        """EPS estimate trend showing how consensus has shifted.
+
+        Columns: current, 7daysAgo, 30daysAgo, 60daysAgo, 90daysAgo.
+        Indexed by period end date.
+        """
+        return self._get_earnings_trend()["eps_trend"]
+
+    @property
+    def eps_revisions(self) -> pd.DataFrame:
+        """Count of upward/downward EPS estimate revisions by period.
+
+        Columns: upLast7days, upLast30days, downLast30days, downLast90days.
+        Indexed by period end date.
+        """
+        return self._get_earnings_trend()["eps_revisions"]
+
+    @property
+    def growth_estimates(self) -> pd.DataFrame:
+        """Analyst consensus growth rate estimate by period (0q, +1q, 0y, +1y).
+
+        Column: growth (as a decimal fraction, e.g. 0.15 = 15%).
+        Indexed by period end date.
+        """
+        return self._get_earnings_trend()["growth_estimates"]
+
     # ── News ──────────────────────────────────────────────────────────────────
 
     @property

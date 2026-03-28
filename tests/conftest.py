@@ -159,6 +159,85 @@ def yahoo_options_chain():
 
 
 @pytest.fixture
+def yahoo_earnings_trend_module():
+    """Minimal earningsTrend quoteSummary stub with 4 periods."""
+    return {
+        "earningsTrend": {
+            "trend": [
+                {
+                    "period": "0q",
+                    "endDate": "2024-03-31",
+                    "growth": {"raw": 0.12, "fmt": "12%"},
+                    "earningsEstimate": {
+                        "avg": {"raw": 1.50},
+                        "low": {"raw": 1.20},
+                        "high": {"raw": 1.80},
+                        "yearAgoEps": {"raw": 1.34},
+                        "numberOfAnalysts": {"raw": 15},
+                        "growth": {"raw": 0.12},
+                    },
+                    "revenueEstimate": {
+                        "avg": {"raw": 90_000_000_000},
+                        "low": {"raw": 85_000_000_000},
+                        "high": {"raw": 95_000_000_000},
+                        "yearAgoRevenue": {"raw": 80_000_000_000},
+                        "numberOfAnalysts": {"raw": 14},
+                        "growth": {"raw": 0.10},
+                    },
+                    "epsTrend": {
+                        "current": {"raw": 1.50},
+                        "7daysAgo": {"raw": 1.48},
+                        "30daysAgo": {"raw": 1.45},
+                        "60daysAgo": {"raw": 1.42},
+                        "90daysAgo": {"raw": 1.40},
+                    },
+                    "epsRevisions": {
+                        "upLast7days": {"raw": 3},
+                        "upLast30days": {"raw": 5},
+                        "downLast30days": {"raw": 2},
+                        "downLast90days": {"raw": 1},
+                    },
+                },
+                {
+                    "period": "+1q",
+                    "endDate": "2024-06-30",
+                    "growth": {"raw": 0.08, "fmt": "8%"},
+                    "earningsEstimate": {
+                        "avg": {"raw": 1.60},
+                        "low": {"raw": 1.30},
+                        "high": {"raw": 1.90},
+                        "yearAgoEps": {"raw": 1.48},
+                        "numberOfAnalysts": {"raw": 12},
+                        "growth": {"raw": 0.08},
+                    },
+                    "revenueEstimate": {
+                        "avg": {"raw": 92_000_000_000},
+                        "low": {"raw": 88_000_000_000},
+                        "high": {"raw": 96_000_000_000},
+                        "yearAgoRevenue": {"raw": 81_000_000_000},
+                        "numberOfAnalysts": {"raw": 11},
+                        "growth": {"raw": 0.09},
+                    },
+                    "epsTrend": {
+                        "current": {"raw": 1.60},
+                        "7daysAgo": {"raw": 1.58},
+                        "30daysAgo": {"raw": 1.55},
+                        "60daysAgo": {"raw": 1.52},
+                        "90daysAgo": {"raw": 1.50},
+                    },
+                    "epsRevisions": {
+                        "upLast7days": {"raw": 2},
+                        "upLast30days": {"raw": 4},
+                        "downLast30days": {"raw": 1},
+                        "downLast90days": {"raw": 0},
+                    },
+                },
+            ]
+        }
+    }
+
+
+@pytest.fixture
 def ecb_rates_response():
     return {
         "amount": 1.0,
