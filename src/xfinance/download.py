@@ -24,7 +24,7 @@ import pandas as pd
 from xfinance import cleaner
 from xfinance.sources._utils import period_to_dates
 from xfinance.sources.base import PricesParams
-from xfinance.sources.yahoo import YahooSource
+from xfinance.sources.router import DataSourceRouter
 from xfinance.stores.memory import MemoryCache
 
 logger = logging.getLogger(__name__)
@@ -33,11 +33,11 @@ logger = logging.getLogger(__name__)
 async def _fetch_one(
     symbol: str,
     params: PricesParams,
-    yahoo: YahooSource,
-    client: httpx.AsyncClient,
+    router: DataSourceRouter,
 ) -> tuple[str, pd.DataFrame | Exception]:
     try:
-        raw = await yahoo.fetch_prices(params, client=client)
+        raw, source = await router.fetch_prices(params)
+        logger.debug("download: fetched %s from %s", symbol, source)
         return symbol, raw
     except Exception as exc:
         logger.warning("download: failed to fetch %s: %s", symbol, exc)
@@ -64,12 +64,11 @@ async def _download_async(
     proxy: str | None = None,
     na_fill: str | int | float | None = None,
 ) -> pd.DataFrame:
-    yahoo = YahooSource()
-
     client_kwargs: dict = {"http2": True, "follow_redirects": True}
     if proxy:
         client_kwargs["proxies"] = proxy
     async with httpx.AsyncClient(**client_kwargs) as client:
+        router = DataSourceRouter.from_names([], http_client=client)
         tasks = []
         for sym in symbols:
             params = PricesParams(
@@ -80,7 +79,7 @@ async def _download_async(
                 interval=interval,
                 prepost=prepost,
             )
-            tasks.append(_fetch_one(sym, params, yahoo, client))
+            tasks.append(_fetch_one(sym, params, router))
 
         results = await asyncio.gather(*tasks)
 

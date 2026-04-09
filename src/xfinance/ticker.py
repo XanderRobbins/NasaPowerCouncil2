@@ -43,6 +43,7 @@ from xfinance import cleaner
 from xfinance.exceptions import AllSourcesFailedError, SymbolNotFoundError
 from xfinance.sources._utils import period_to_dates
 from xfinance.sources.base import PricesParams
+from xfinance.sources.router import DataSourceRouter
 from xfinance.sources.yahoo import OptionChain, YahooSource
 from xfinance.stores.memory import MemoryCache
 
@@ -188,6 +189,7 @@ class Ticker:
         self._proxy = proxy
         self._session = session
         self._yahoo = YahooSource()
+        self._router: DataSourceRouter | None = None
         self._cache = MemoryCache(default_ttl=_DEFAULT_TTL)
         self._http: httpx.AsyncClient | None = session
 
@@ -203,6 +205,7 @@ class Ticker:
             if self._proxy:
                 kwargs["proxies"] = self._proxy
             self._http = httpx.AsyncClient(**kwargs)
+            self._router = DataSourceRouter.from_names([], http_client=self._http)
         return self._http
 
     def _cached(self, key: str, fn: Any, *args: Any, **kwargs: Any) -> Any:
@@ -263,7 +266,7 @@ class Ticker:
         Open, High, Low, Close, Volume, Dividends, Stock Splits, Capital Gains, Adj Close
         """
         async def _fetch() -> pd.DataFrame:
-            client = await self._get_client()
+            await self._get_client()
             start_date = _parse_date(start) if start else None
             end_date = _parse_date(end) if end else None
             params = PricesParams(
@@ -274,7 +277,9 @@ class Ticker:
                 interval=interval,
                 prepost=prepost,
             )
-            return await self._yahoo.fetch_prices(params, client=client)
+            raw, source = await self._router.fetch_prices(params)
+            logger.debug("history: fetched %s from %s", self._symbol, source)
+            return raw
 
         raw = _run(_fetch())
         # Capture chart metadata emitted by fetch_prices
@@ -329,8 +334,9 @@ class Ticker:
         """
         def _fetch() -> dict[str, Any]:
             async def inner() -> dict[str, Any]:
-                client = await self._get_client()
-                raw = await self._yahoo.fetch_info(self._symbol, client=client)
+                await self._get_client()
+                raw, source = await self._router.fetch_info(self._symbol)
+                logger.debug("info: fetched %s from %s", self._symbol, source)
                 return cleaner.clean_info(raw)
             return _run(inner())
         return self._cached("info", lambda: (lambda: _fetch())())  # type: ignore[return-value]
