@@ -157,29 +157,12 @@ def clean_prices(
 def repair_prices(df: pd.DataFrame) -> pd.DataFrame:
     """Detect and fix common OHLCV data quality issues.
 
-    Two classes of errors are corrected:
+    Corrects two classes of errors:
+    1. 100× unit errors — bars where Close is >20× or <1/20 the series median.
+    2. Split-unadjusted history — large single-bar jumps with no recorded split,
+       corrected by scaling prior bars by the implied ratio.
 
-    1. **100× unit errors** — Yahoo Finance occasionally returns historical
-       prices denominated in cents (pence for LSE stocks, fils for Gulf
-       markets, etc.) instead of the standard currency unit.  Any bar whose
-       Close is more than 20× the series median is divided by 100; any bar
-       whose Close is less than 1/20 of the median is multiplied by 100.
-
-    2. **Split-unadjusted history** — When Yahoo applies a stock split
-       going forward but leaves historical bars unadjusted, there is a large
-       discontinuous jump (or drop) at the split date with no corresponding
-       ``Stock Splits`` entry.  This function identifies those jumps,
-       recognises the implied split ratio, and retroactively scales all
-       prior OHLC bars by the inverse ratio so the series is continuous.
-
-    Parameters
-    ----------
-    df:   Price DataFrame **after** type coercion (float64 OHLC, UTC index)
-          but **before** auto-adjustment.  Must contain at least ``Close``.
-
-    Returns
-    -------
-    Corrected copy of the DataFrame.
+    Expects float64 OHLC with UTC index, called before auto-adjustment.
     """
     if df.empty or "Close" not in df.columns or len(df) < 2:
         return df
@@ -230,9 +213,6 @@ def repair_prices(df: pd.DataFrame) -> pd.DataFrame:
         ratio = curr / prev
         for factor in _SPLIT_FACTORS:
             if abs(ratio / factor - 1.0) <= _TOLERANCE:
-                # ratio ≈ factor: scale prior bars by ratio so the series is
-                # continuous.  e.g. 2:1 split → ratio=0.5, prior bars halved;
-                # 1:2 reverse split → ratio=2.0, prior bars doubled.
                 for col in price_cols:
                     df.iloc[:loc, df.columns.get_loc(col)] *= ratio
                 logger.debug(

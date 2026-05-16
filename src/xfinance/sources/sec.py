@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 _BASE = "https://data.sec.gov"
 _HEADERS = {
-    "User-Agent": "xfinance/0.2 (https://github.com/xanderrobbins/nasapowercouncil2; contact@example.com)",
+    "User-Agent": "xfinance/0.3.0 (contact@example.com)",
     "Accept": "application/json",
 }
 _TICKER_CIK_URL = "https://www.sec.gov/files/company_tickers.json"

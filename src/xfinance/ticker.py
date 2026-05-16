@@ -78,19 +78,11 @@ _FAST_INFO_ATTRS: dict[str, str] = {
 
 
 class FastInfo:
-    """Lightweight info object with both attribute and dict-style access.
+    """Lightweight info wrapper with attribute and dict-style access.
 
-    Mirrors yfinance's ``FastInfo`` so code written for yfinance works
-    without modification.
-
-    Attribute access (yfinance style):
-        ``t.fast_info.market_cap``, ``t.fast_info.last_price``
-
-    Dict access (legacy style):
-        ``t.fast_info["marketCap"]``, ``t.fast_info["regularMarketPrice"]``
-
-    Both ``snake_case`` attribute names and original ``camelCase`` dict keys
-    are accepted.
+    Mirrors yfinance's FastInfo. Accepts both snake_case attributes
+    (``t.fast_info.market_cap``) and camelCase dict keys
+    (``t.fast_info["marketCap"]``).
     """
 
     def __init__(self, info: dict[str, Any]) -> None:

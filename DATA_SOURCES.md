@@ -1,6 +1,6 @@
 # Data Sources
 
-findata fetches financial data from the following sources on behalf of users.
+xfinance fetches financial data from the following sources on behalf of users.
 Users are responsible for complying with each source's terms of service.
 
 ## Risk Tiers
@@ -50,7 +50,7 @@ Users are responsible for complying with each source's terms of service.
 - **Rate limit**: 1200 requests/minute (weight-based)
 - **ToS**: https://www.binance.com/en/terms
 - **Note**: Commercial redistribution of API data requires enterprise agreement.
-  findata fetches data on behalf of users only.
+  xfinance fetches data on behalf of users only.
 
 ### CoinGecko
 
@@ -60,7 +60,7 @@ Users are responsible for complying with each source's terms of service.
 - **Rate limit**: 30 calls/minute (free tier)
 - **ToS**: https://www.coingecko.com/en/terms
 - **Note**: CoinGecko prohibits commercial redistribution without an enterprise
-  agreement. findata accesses data on behalf of individual users.
+  agreement. xfinance accesses data on behalf of individual users.
 
 ### Finnhub *(not built-in, add via plugin or API key config)*
 
@@ -104,16 +104,9 @@ Users are responsible for complying with each source's terms of service.
 
 ## FRED (Federal Reserve Economic Data)
 
-> ⚠️ **Not included in findata due to ToS restrictions.**
-
-FRED's [2024 ToS update](https://fred.stlouisfed.org/docs/api/terms_of_use.html)
-explicitly prohibits:
-- Caching or archiving FRED data
-- Providing FRED data to third parties
-
-Each user must access FRED directly with their own API key
-(https://fred.stlouisfed.org/docs/api/api_key.html).  findata cannot
-include a FRED adapter without violating these terms.
+Not included — FRED's [2024 ToS](https://fred.stlouisfed.org/docs/api/terms_of_use.html)
+prohibits caching and redistribution. Each user must access FRED directly with
+their own API key (https://fred.stlouisfed.org/docs/api/api_key.html).
 
 ---
 
@@ -123,23 +116,23 @@ Any source can be added as a community plugin by implementing the
 `DataSource` protocol and registering via Python entry points:
 
 ```toml
-[project.entry-points."findata.sources"]
-my_source = "findata_mysource:MySource"
+[project.entry-points."xfinance.sources"]
+my_source = "my_source_package:MySource"
 ```
 
-See the source code in `src/findata/sources/base.py` for the protocol definition.
+See the source code in `src/xfinance/sources/base.py` for the protocol definition.
 A new adapter typically requires fewer than 100 lines of code.
 
 ---
 
 ## Disclaimer
 
-findata is a **client library** that fetches data on behalf of users.
+xfinance is a **client library** that fetches data on behalf of users.
 It does not store, redistribute, or re-publish financial data.
 Users are solely responsible for ensuring their use complies with
 each data provider's terms of service, applicable laws, and exchange
 data licensing requirements.
 
-Data obtained via findata should not be used for commercial purposes
+Data obtained via xfinance should not be used for commercial purposes
 without independently verifying that your use case complies with each
 provider's terms.

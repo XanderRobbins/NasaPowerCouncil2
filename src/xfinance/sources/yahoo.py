@@ -1,17 +1,7 @@
-"""Yahoo Finance data source adapter — comprehensive coverage of all endpoints.
+"""Yahoo Finance data source adapter.
 
-Covers:
-  - Price history with dividends, splits, capital gains (v8 chart API)
-  - Company info (25+ quoteSummary modules)
-  - Income statement, balance sheet, cash flow (annual + quarterly)
-  - Options chains (calls + puts)
-  - Analyst recommendations and price targets
-  - Institutional / insider holders
-  - Earnings calendar and history
-  - News
-  - Real-time quote
-
-Risk tier 3 — unofficial API, no warranty.
+Covers prices, financials, options, analyst data, holders, earnings,
+news, and real-time quotes. Risk tier 3 — unofficial API, no warranty.
 """
 
 from __future__ import annotations
